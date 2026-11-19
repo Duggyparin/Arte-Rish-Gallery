@@ -1,0 +1,11 @@
+{
+  "title": "Arté Rish | Nails, Lash, Skin & Body",
+  "description": "A considered beauty portfolio for nails, lash, skin, and body artistry, with a browsable gallery and owner-only photo management.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
