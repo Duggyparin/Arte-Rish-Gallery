@@ -287,6 +287,10 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
             value={shareUrl}
             size={512}
             level="M"
+            style={{
+              width: "min(208px, calc(100vw - 120px))",
+              height: "min(208px, calc(100vw - 120px))",
+            }}
             fgColor="#3f2a18"
             bgColor="#ffffff"
             aria-label="Scan to open the Arté Rish gallery"
