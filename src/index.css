@@ -1445,7 +1445,7 @@
 }
 .category-row {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 34px 34px;
+  grid-template-columns: 38px minmax(0, 1fr) 44px 44px;
   align-items: center;
   gap: 10px;
   min-height: 60px;
@@ -1473,11 +1473,22 @@
 }
 .category-row > button[type="submit"],
 .category-row > button[type="button"] {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
   border: 0;
   background: transparent;
   color: var(--brown);
   font-size: 10px;
   padding: 5px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.category-row > button[type="submit"]:focus-visible,
+.category-row > button[type="button"]:focus-visible {
+  outline: 2px solid var(--brown);
+  outline-offset: 2px;
 }
 
 @keyframes fadeUp {
