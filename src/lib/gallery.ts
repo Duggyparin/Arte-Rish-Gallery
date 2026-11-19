@@ -6,6 +6,15 @@ export type GalleryCategory = {
   position: number;
 };
 
+export type GalleryPriceOption = {
+  id: string;
+  categoryId: string;
+  name: string;
+  details: string;
+  price: number | null;
+  position: number;
+};
+
 export type GalleryPhoto = {
   id: string;
   storagePath: string;
@@ -14,6 +23,9 @@ export type GalleryPhoto = {
   caption: string;
   categoryId: string | null;
   category: string;
+  priceTierId: string | null;
+  priceOption: GalleryPriceOption | null;
+  customPrice: number | null;
   published: boolean;
   createdAt: string;
 };
@@ -24,9 +36,30 @@ type PhotoRow = {
   title: string;
   caption: string;
   category_id: string | null;
+  price_tier_id?: string | null;
+  custom_price?: number | null;
   is_published: boolean;
   created_at: string;
 };
+
+type PriceOptionRow = {
+  id: string;
+  category_id: string;
+  name: string;
+  details: string;
+  price: number | null;
+  position: number;
+};
+
+function isMissingPricingSchemaError(code: string, message: string) {
+  const normalizedMessage = message.toLowerCase();
+  return (
+    ["42703", "42P01", "PGRST204", "PGRST205"].includes(code) &&
+    ["price_tier_id", "custom_price", "price_options"].some((part) =>
+      normalizedMessage.includes(part),
+    )
+  );
+}
 
 export async function readGallery(includeUnpublished = false) {
   if (!supabase) {
@@ -42,16 +75,45 @@ export async function readGallery(includeUnpublished = false) {
     .order("name");
   if (categoryError) throw categoryError;
 
+  let priceOptionRows: PriceOptionRow[] = [];
+  let pricingAvailable = true;
+  const { data: optionRows, error: optionError } = await supabase
+    .from("price_options")
+    .select("id, category_id, name, details, price, position")
+    .order("position")
+    .order("name");
+  if (optionError) {
+    if (!isMissingPricingSchemaError(optionError.code, optionError.message)) throw optionError;
+    pricingAvailable = false;
+  } else {
+    priceOptionRows = optionRows as PriceOptionRow[];
+  }
+
   const photoQuery = supabase
     .from("photos")
-    .select("id, storage_path, title, caption, category_id, is_published, created_at")
+    .select(
+      "id, storage_path, title, caption, category_id, price_tier_id, custom_price, is_published, created_at",
+    )
     .order("created_at", { ascending: false });
-  const { data: photoRows, error: photoError } = includeUnpublished
-    ? await photoQuery
-    : await photoQuery.eq("is_published", true);
-  if (photoError) throw photoError;
+  const result = includeUnpublished ? await photoQuery : await photoQuery.eq("is_published", true);
+  let rows: PhotoRow[];
+  if (result.error) {
+    if (!isMissingPricingSchemaError(result.error.code, result.error.message)) throw result.error;
 
-  const rows = photoRows as PhotoRow[];
+    const fallbackQuery = supabase
+      .from("photos")
+      .select("id, storage_path, title, caption, category_id, is_published, created_at")
+      .order("created_at", { ascending: false });
+    const fallback = includeUnpublished
+      ? await fallbackQuery
+      : await fallbackQuery.eq("is_published", true);
+    if (fallback.error) throw fallback.error;
+    rows = fallback.data as PhotoRow[];
+    pricingAvailable = false;
+  } else {
+    rows = result.data as PhotoRow[];
+  }
+
   const signedUrls = rows.length
     ? await supabase.storage.from(GALLERY_BUCKET).createSignedUrls(
         rows.map((photo) => photo.storage_path),
@@ -62,6 +124,15 @@ export async function readGallery(includeUnpublished = false) {
   const urlsByPath = new Map(signedUrls.data.map((item) => [item.path, item.signedUrl]));
   const categories: GalleryCategory[] = categoryRows;
   const namesById = new Map(categories.map((category) => [category.id, category.name]));
+  const priceOptions: GalleryPriceOption[] = priceOptionRows.map((option) => ({
+    id: option.id,
+    categoryId: option.category_id,
+    name: option.name,
+    details: option.details,
+    price: option.price,
+    position: option.position,
+  }));
+  const priceOptionsById = new Map(priceOptions.map((option) => [option.id, option]));
   const photos: GalleryPhoto[] = rows.map((photo) => {
     const src = urlsByPath.get(photo.storage_path);
     if (!src) throw new Error(`Could not create an image link for ${photo.title}.`);
@@ -75,12 +146,15 @@ export async function readGallery(includeUnpublished = false) {
       category: photo.category_id
         ? (namesById.get(photo.category_id) ?? "Uncategorized")
         : "Uncategorized",
+      priceTierId: photo.price_tier_id ?? null,
+      priceOption: photo.price_tier_id ? (priceOptionsById.get(photo.price_tier_id) ?? null) : null,
+      customPrice: photo.custom_price ?? null,
       published: photo.is_published,
       createdAt: photo.created_at,
     };
   });
 
-  return { categories, photos };
+  return { categories, photos, priceOptions, pricingAvailable };
 }
 
 export async function uploadPhoto(file: File, categoryId: string | null) {

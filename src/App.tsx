@@ -5,6 +5,7 @@ import {
   uploadPhoto,
   type GalleryCategory,
   type GalleryPhoto,
+  type GalleryPriceOption,
 } from "./lib/gallery";
 import { supabase } from "./lib/supabase";
 
@@ -15,7 +16,17 @@ function Icon({
   name,
   size = 20,
 }: {
-  name: "arrow" | "close" | "upload" | "edit" | "eye" | "trash" | "menu" | "instagram";
+  name:
+    | "arrow"
+    | "close"
+    | "upload"
+    | "edit"
+    | "eye"
+    | "trash"
+    | "menu"
+    | "instagram"
+    | "facebook"
+    | "search";
   size?: number;
 }) {
   const paths: Record<string, React.ReactNode> = {
@@ -62,6 +73,19 @@ function Icon({
         <path d="M17.5 6.5h.01" />
       </>
     ),
+    facebook: (
+      <path
+        d="M13.5 21v-7.3H16l.4-2.9h-2.9V9c0-.8.2-1.3 1.4-1.3h1.5V5.1c-.7-.1-1.5-.2-2.3-.2-2.3 0-3.9 1.4-3.9 4v1.9H7.7v2.9h2.5V21h3.3Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    ),
+    search: (
+      <>
+        <circle cx="10.8" cy="10.8" r="6.8" />
+        <path d="m16 16 4.5 4.5" />
+      </>
+    ),
   };
   return (
     <svg
@@ -100,7 +124,7 @@ function Logo({ compact = false }: { compact?: boolean }) {
       aria-label="Arté Rish home"
     >
       <span className="logo-name">Arté Rish</span>
-      {!compact && <span className="logo-tagline">Nails · Lash · Skin · Body</span>}
+      {!compact && <span className="logo-tagline">Beauty & wellness services</span>}
     </button>
   );
 }
@@ -172,11 +196,26 @@ function Footer() {
         <p>A quiet archive of artistry, detail, and care.</p>
       </div>
       <div className="footer-center">
-        Nails <i>·</i> Lash <i>·</i> Skin <i>·</i> Body
+        Nails Extension <i>·</i> Lashes Extension <i>·</i> Facial Care <i>·</i> Gluta Drip <i>·</i>{" "}
+        Slimming Services <i>·</i> Foot Care <i>·</i> Profilo <i>·</i> Botox <i>·</i> GLP1
+        Terzipatide <i>·</i> Other Services
       </div>
       <div className="footer-actions">
-        <a href="#instagram" aria-label="Instagram">
+        <a
+          href="https://www.instagram.com/arterish_cdo"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Arté Rish on Instagram"
+        >
           <Icon name="instagram" size={18} /> Instagram
+        </a>
+        <a
+          href="https://www.facebook.com/profile.php?id=100095680775899"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Arté Rish on Facebook"
+        >
+          <Icon name="facebook" size={18} /> Facebook
         </a>
         <button onClick={() => goTo("login")}>Owner</button>
       </div>
@@ -320,6 +359,7 @@ function Lightbox({
       document.body.style.overflow = "";
     };
   }, [onClose, onMove]);
+  const price = photo.customPrice ?? photo.priceOption?.price ?? undefined;
   return (
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={photo.title}>
       <button className="lightbox-close" onClick={onClose} aria-label="Close">
@@ -333,6 +373,19 @@ function Lightbox({
           <span className="chip chip--small">{photo.category}</span>
           <h2>{photo.title}</h2>
           <p>{photo.caption}</p>
+          {price !== undefined && (
+            <div className="lightbox-price">
+              <span>{photo.priceOption?.name ?? "Design price"}</span>
+              {photo.priceOption?.details && <small>{photo.priceOption.details}</small>}
+              <strong>
+                {new Intl.NumberFormat("en-PH", {
+                  style: "currency",
+                  currency: "PHP",
+                  maximumFractionDigits: 0,
+                }).format(price)}
+              </strong>
+            </div>
+          )}
         </div>
         <div className="lightbox-nav">
           <button onClick={() => onMove(-1)} aria-label="Previous photo">
@@ -362,9 +415,13 @@ function Gallery({
   error: string;
 }) {
   const [categoryId, setCategoryId] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [activePhoto, setActivePhoto] = useState<Photo | null>(null);
-  const filtered =
-    categoryId === "All" ? photos : photos.filter((photo) => photo.categoryId === categoryId);
+  const filtered = photos.filter(
+    (photo) =>
+      (categoryId === "All" || photo.categoryId === categoryId) &&
+      matchesPhotoSearch(photo, searchQuery),
+  );
   useEffect(() => {
     const open = (event: Event) => {
       const requestedId = (event as CustomEvent<string>).detail;
@@ -375,8 +432,9 @@ function Gallery({
   }, [photos]);
   const move = (direction: number) => {
     if (!activePhoto) return;
-    const index = photos.findIndex((p) => p.id === activePhoto.id);
-    setActivePhoto(photos[(index + direction + photos.length) % photos.length]);
+    const index = filtered.findIndex((photo) => photo.id === activePhoto.id);
+    const nextIndex = (index + direction + filtered.length) % filtered.length;
+    setActivePhoto(filtered[nextIndex] ?? null);
   };
   return (
     <div className="page gallery-page">
@@ -385,7 +443,7 @@ function Gallery({
         <p className="eyebrow">
           <Sparkle size={13} /> The archive
         </p>
-        <h1>The Nail Gallery</h1>
+        <h1>The Beauty Gallery</h1>
         <p>A growing collection of color, detail, and tiny moments of beauty.</p>
         <div className="chips">
           <button
@@ -405,6 +463,16 @@ function Gallery({
             </button>
           ))}
         </div>
+        <label className="search-field gallery-search">
+          <Icon name="search" size={18} />
+          <input
+            type="search"
+            aria-label="Search designs by name, caption, or category"
+            placeholder="Search designs by name..."
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </label>
       </header>
       <main className="gallery-content">
         <div className="gallery-count">
@@ -441,11 +509,23 @@ function Gallery({
         ) : (
           <div className="empty-state">
             <Sparkle size={42} />
-            <h2>A quiet corner, for now.</h2>
-            <p>No photos in this category yet.</p>
-            <button onClick={() => setCategoryId("All")} className="text-link">
-              Return to all work <Icon name="arrow" size={16} />
-            </button>
+            <h2>{searchQuery.trim() ? "No designs found." : "A quiet corner, for now."}</h2>
+            <p>
+              {searchQuery.trim()
+                ? `No designs match "${searchQuery.trim()}". Try another search.`
+                : "No photos in this category yet."}
+            </p>
+            {(searchQuery.trim() || categoryId !== "All") && (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setCategoryId("All");
+                }}
+                className="text-link"
+              >
+                Clear search and filters <Icon name="arrow" size={16} />
+              </button>
+            )}
           </div>
         )}
       </main>
@@ -453,8 +533,8 @@ function Gallery({
       {activePhoto && (
         <Lightbox
           photo={activePhoto}
-          photoNumber={photos.findIndex((photo) => photo.id === activePhoto.id) + 1}
-          photoCount={photos.length}
+          photoNumber={filtered.findIndex((photo) => photo.id === activePhoto.id) + 1}
+          photoCount={filtered.length}
           onClose={() => setActivePhoto(null)}
           onMove={move}
         />
@@ -464,13 +544,11 @@ function Gallery({
 }
 
 function Login() {
-  const [sent, setSent] = useState(false);
-  const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const configured = Boolean(supabase);
 
-  const requestLoginLink = async () => {
+  const signInWithGoogle = async () => {
     if (!supabase) {
       setError(
         "Supabase is not configured. Follow the connection steps in the project setup guide.",
@@ -480,18 +558,16 @@ function Login() {
     setSending(true);
     setError("");
     try {
-      const { error: loginError } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: `${window.location.origin}/?owner=1`, shouldCreateUser: false },
+      const { error: loginError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/?owner=1` },
       });
       if (loginError) {
         setError(loginError.message);
-        return;
+        setSending(false);
       }
-      setSent(true);
     } catch (requestError) {
       setError(errorMessage(requestError));
-    } finally {
       setSending(false);
     }
   };
@@ -505,46 +581,16 @@ function Login() {
         <Sparkle size={28} />
         <Sparkle size={14} />
       </div>
-      <form
-        className="auth-card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void requestLoginLink();
-        }}
-      >
+      <div className="auth-card">
         <Logo />
-        {!sent ? (
-          <>
-            <div className="auth-heading">
-              <p className="eyebrow">Private entrance</p>
-              <h1>Welcome back.</h1>
-              <p>Enter your email and we’ll send a secure link to your inbox.</p>
-            </div>
-            <label className="field">
-              <span>Email address</span>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </label>
-            <Button type="submit" disabled={sending || !configured}>
-              {sending ? "Sending…" : "Send me a login link"} <Icon name="arrow" size={18} />
-            </Button>
-          </>
-        ) : (
-          <div className="confirmation">
-            <Sparkle size={42} />
-            <p className="eyebrow">Link sent</p>
-            <h1>Check your email.</h1>
-            <p>Your secure sign-in link is on its way. Open it on this device to continue.</p>
-            <button className="text-link" type="button" onClick={() => setSent(false)}>
-              Use a different email
-            </button>
-          </div>
-        )}
+        <div className="auth-heading">
+          <p className="eyebrow">Private entrance</p>
+          <h1>Welcome back.</h1>
+          <p>Continue with the Google account authorized to manage this gallery.</p>
+        </div>
+        <Button onClick={() => void signInWithGoogle()} disabled={sending || !configured}>
+          {sending ? "Connecting…" : "Continue with Google"} <Icon name="arrow" size={18} />
+        </Button>
         {error && (
           <p className="form-error" role="alert">
             {error}
@@ -559,7 +605,7 @@ function Login() {
         <p className="owner-note">
           <span>•</span> Owner access only <span>•</span>
         </p>
-      </form>
+      </div>
     </div>
   );
 }
@@ -572,22 +618,36 @@ function errorMessage(error: unknown) {
   return "Something went wrong. Please try again.";
 }
 
+function matchesPhotoSearch(photo: Photo, query: string) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+
+  const searchableText = `${photo.title} ${photo.caption} ${photo.category}`.toLowerCase();
+  return terms.every((term) => searchableText.includes(term));
+}
+
 function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
-  const [tab, setTab] = useState<"photos" | "categories">("photos");
+  const [tab, setTab] = useState<"photos" | "categories" | "pricing">("photos");
   const [access, setAccess] = useState<"checking" | "ready" | "denied">("checking");
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photoSearch, setPhotoSearch] = useState("");
   const [categories, setCategories] = useState<GalleryCategory[]>([]);
+  const [priceOptions, setPriceOptions] = useState<GalleryPriceOption[]>([]);
+  const [pricingAvailable, setPricingAvailable] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState("");
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [editing, setEditing] = useState<Photo | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const filteredPhotos = photos.filter((photo) => matchesPhotoSearch(photo, photoSearch));
 
   const refreshContent = async () => {
     const gallery = await readGallery(true);
     setCategories(gallery.categories);
     setPhotos(gallery.photos);
+    setPriceOptions(gallery.priceOptions);
+    setPricingAvailable(gallery.pricingAvailable);
   };
 
   const loadContent = useCallback(async () => {
@@ -679,6 +739,8 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
       title?: string;
       caption?: string;
       category_id?: string | null;
+      price_tier_id?: string | null;
+      custom_price?: number | null;
       is_published?: boolean;
     },
   ): Promise<boolean> => {
@@ -772,7 +834,10 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
             className={tab === "categories" ? "active" : ""}
             onClick={() => setTab("categories")}
           >
-            <span>☷</span> Categories
+            <span>☷</span> Services
+          </button>
+          <button className={tab === "pricing" ? "active" : ""} onClick={() => setTab("pricing")}>
+            <span>₱</span> Pricing
           </button>
         </div>
         <button className="sidebar-exit sidebar-exit--view" onClick={() => goTo("gallery")}>
@@ -786,7 +851,13 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
         <header className="admin-topbar">
           <div>
             <p className="eyebrow">Owner dashboard</p>
-            <h1>{tab === "photos" ? "Your collection" : "Manage categories"}</h1>
+            <h1>
+              {tab === "photos"
+                ? "Your collection"
+                : tab === "categories"
+                  ? "Manage services"
+                  : "Manage pricing"}
+            </h1>
           </div>
           <div className="avatar">AR</div>
         </header>
@@ -843,14 +914,30 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                 <div>
                   <h2>Your photos</h2>
                   <p>
-                    {photos.length} {photos.length === 1 ? "piece" : "pieces"} in your archive
+                    {photoSearch.trim()
+                      ? `${filteredPhotos.length} of ${photos.length} pieces`
+                      : `${photos.length} ${photos.length === 1 ? "piece" : "pieces"} in your archive`}
                   </p>
                 </div>
-                <Button onClick={() => fileRef.current?.click()}>Add photos</Button>
+                <div className="admin-section-tools">
+                  {photos.length > 0 && (
+                    <label className="search-field admin-search">
+                      <Icon name="search" size={18} />
+                      <input
+                        type="search"
+                        aria-label="Search your photos by name, caption, or category"
+                        placeholder="Search your photos..."
+                        value={photoSearch}
+                        onChange={(event) => setPhotoSearch(event.target.value)}
+                      />
+                    </label>
+                  )}
+                  <Button onClick={() => fileRef.current?.click()}>Add photos</Button>
+                </div>
               </div>
-              {photos.length ? (
+              {filteredPhotos.length ? (
                 <div className="admin-grid">
-                  {photos.map((photo) => (
+                  {filteredPhotos.map((photo) => (
                     <article className="admin-photo" key={photo.id}>
                       <div className="admin-photo-image">
                         <img src={photo.src} alt={photo.title} />
@@ -889,14 +976,30 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                     </article>
                   ))}
                 </div>
+              ) : photos.length ? (
+                <div className="gallery-message">
+                  <p>No photos match “{photoSearch.trim()}”.</p>
+                  <button className="text-link" onClick={() => setPhotoSearch("")}>
+                    Clear search
+                  </button>
+                </div>
               ) : (
                 <p className="gallery-message">No photos yet. Upload your first piece above.</p>
               )}
             </section>
           </>
-        ) : (
+        ) : tab === "categories" ? (
           <Categories
             categories={categories}
+            onChanged={reload}
+            notify={notify}
+            setError={setActionError}
+          />
+        ) : (
+          <PricingManager
+            categories={categories}
+            priceOptions={priceOptions}
+            pricingAvailable={pricingAvailable}
             onChanged={reload}
             notify={notify}
             setError={setActionError}
@@ -912,6 +1015,8 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
         <PhotoEditor
           photo={editing}
           categories={categories}
+          priceOptions={priceOptions}
+          pricingAvailable={pricingAvailable}
           onClose={() => setEditing(null)}
           onSave={async (changes) => {
             const saved = await updatePhoto(editing, changes);
@@ -927,24 +1032,35 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
 function PhotoEditor({
   photo,
   categories,
+  priceOptions,
+  pricingAvailable,
   onClose,
   onSave,
 }: {
   photo: Photo;
   categories: GalleryCategory[];
+  priceOptions: GalleryPriceOption[];
   onClose: () => void;
   onSave: (changes: {
     title: string;
     caption: string;
     category_id: string | null;
+    price_tier_id?: string | null;
+    custom_price?: number | null;
     is_published: boolean;
   }) => Promise<boolean>;
+  pricingAvailable: boolean;
 }) {
   const [title, setTitle] = useState(photo.title);
   const [caption, setCaption] = useState(photo.caption);
   const [categoryId, setCategoryId] = useState(photo.categoryId ?? "");
+  const [priceTierId, setPriceTierId] = useState(photo.priceTierId ?? "");
+  const [customPrice, setCustomPrice] = useState(photo.customPrice?.toString() ?? "");
+  const [priceError, setPriceError] = useState("");
   const [published, setPublished] = useState(photo.published);
   const [saving, setSaving] = useState(false);
+  const availablePriceOptions = priceOptions.filter((option) => option.categoryId === categoryId);
+  const selectedPriceOption = priceOptions.find((option) => option.id === priceTierId);
 
   return (
     <div
@@ -957,11 +1073,26 @@ function PhotoEditor({
         className="photo-editor"
         onSubmit={async (event) => {
           event.preventDefault();
+          const parsedCustomPrice = customPrice.trim() ? Number(customPrice) : null;
+          if (
+            parsedCustomPrice !== null &&
+            (!Number.isSafeInteger(parsedCustomPrice) || parsedCustomPrice <= 0)
+          ) {
+            setPriceError("Enter a positive whole-peso amount, or leave the override blank.");
+            return;
+          }
+          setPriceError("");
           setSaving(true);
           const saved = await onSave({
             title: title.trim(),
             caption: caption.trim(),
             category_id: categoryId || null,
+            ...(pricingAvailable
+              ? {
+                  price_tier_id: priceTierId || null,
+                  custom_price: parsedCustomPrice,
+                }
+              : {}),
             is_published: published,
           });
           setSaving(false);
@@ -997,9 +1128,19 @@ function PhotoEditor({
           />
         </label>
         <label className="field">
-          <span>Category</span>
-          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-            <option value="">Uncategorized</option>
+          <span>Service</span>
+          <select
+            value={categoryId}
+            onChange={(event) => {
+              const nextCategoryId = event.target.value;
+              setCategoryId(nextCategoryId);
+              if (priceTierId && nextCategoryId !== selectedPriceOption?.categoryId) {
+                setPriceTierId("");
+                setCustomPrice("");
+              }
+            }}
+          >
+            <option value="">No service</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -1007,6 +1148,58 @@ function PhotoEditor({
             ))}
           </select>
         </label>
+        {pricingAvailable ? (
+          <>
+            <label className="field">
+              <span>Price label</span>
+              <select
+                value={priceTierId}
+                onChange={(event) => {
+                  const nextPriceTierId = event.target.value;
+                  setPriceTierId(nextPriceTierId);
+                  if (!nextPriceTierId) setCustomPrice("");
+                }}
+              >
+                <option value="">No price shown</option>
+                {availablePriceOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                    {option.price !== null ? ` — ₱${option.price}` : " — price not set"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {priceTierId && (
+              <label className="field">
+                <span>Custom price override (optional)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  placeholder={selectedPriceOption?.price?.toString() ?? ""}
+                  value={customPrice}
+                  onChange={(event) => setCustomPrice(event.target.value)}
+                />
+                <small className="field-hint">
+                  {selectedPriceOption?.price === null
+                    ? "This service has no saved price yet. Enter one here or add it in Pricing."
+                    : "Leave blank to use the selected service price."}
+                </small>
+              </label>
+            )}
+            {priceError && (
+              <p className="form-error" role="alert">
+                {priceError}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="pricing-unavailable" role="status">
+            Pricing needs the updated Supabase schema. Run the updated supabase/schema.sql in your
+            project’s SQL Editor to enable price labels.
+          </p>
+        )}
         <label className="publish-toggle">
           <span>
             <strong>Published</strong>
@@ -1029,6 +1222,279 @@ function PhotoEditor({
         </div>
       </form>
     </div>
+  );
+}
+
+function PricingManager({
+  categories,
+  priceOptions,
+  pricingAvailable,
+  onChanged,
+  notify,
+  setError,
+}: {
+  categories: GalleryCategory[];
+  priceOptions: GalleryPriceOption[];
+  pricingAvailable: boolean;
+  onChanged: () => Promise<boolean>;
+  notify: (message: string) => void;
+  setError: (message: string) => void;
+}) {
+  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
+  const [name, setName] = useState("");
+  const [details, setDetails] = useState("");
+  const [price, setPrice] = useState("");
+  const selectedCategoryId = categories.some((category) => category.id === categoryId)
+    ? categoryId
+    : (categories[0]?.id ?? "");
+  const categoryOptions = priceOptions.filter((option) => option.categoryId === selectedCategoryId);
+
+  const addOption = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supabase || !selectedCategoryId || !name.trim()) return;
+    const parsedPrice = price.trim() ? Number(price) : null;
+    if (parsedPrice !== null && (!Number.isSafeInteger(parsedPrice) || parsedPrice <= 0)) {
+      setError("Enter a positive whole-peso amount, or leave the price blank for now.");
+      return;
+    }
+
+    setError("");
+    try {
+      const { error } = await supabase.from("price_options").insert({
+        id: crypto.randomUUID(),
+        category_id: selectedCategoryId,
+        name: name.trim(),
+        details: details.trim(),
+        price: parsedPrice,
+        position: categoryOptions.length + 1,
+      });
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      setName("");
+      setDetails("");
+      setPrice("");
+      if (await onChanged()) notify("Price entry added.");
+    } catch (error) {
+      setError(errorMessage(error));
+    }
+  };
+
+  const updateOption = async (
+    id: string,
+    changes: { name: string; details: string; price: number | null },
+  ) => {
+    if (!supabase) return false;
+    setError("");
+    try {
+      const { error } = await supabase.from("price_options").update(changes).eq("id", id);
+      if (error) {
+        setError(error.message);
+        return false;
+      }
+      if (await onChanged()) {
+        notify("Price entry saved.");
+        return true;
+      }
+    } catch (error) {
+      setError(errorMessage(error));
+    }
+    return false;
+  };
+
+  const deleteOption = async (option: GalleryPriceOption) => {
+    if (
+      !supabase ||
+      !window.confirm(`Delete "${option.name}"? Photos using it will keep their custom price only.`)
+    )
+      return;
+    setError("");
+    try {
+      const { error } = await supabase.from("price_options").delete().eq("id", option.id);
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      if (await onChanged()) notify("Price entry deleted.");
+    } catch (error) {
+      setError(errorMessage(error));
+    }
+  };
+
+  return (
+    <section className="category-panel">
+      <div className="panel-intro">
+        <h2>Service price list</h2>
+        <p>
+          Add named price entries under a service. Leave the amount blank while you are waiting for
+          it.
+        </p>
+      </div>
+      {!pricingAvailable ? (
+        <p className="pricing-unavailable" role="status">
+          Run the updated supabase/schema.sql in your project’s SQL Editor to enable service
+          pricing.
+        </p>
+      ) : categories.length === 0 ? (
+        <p className="gallery-message">Add a service category before creating its price list.</p>
+      ) : (
+        <>
+          <label className="field pricing-service">
+            <span>Service</span>
+            <select
+              value={selectedCategoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+            >
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <form className="pricing-add-form" onSubmit={(event) => void addOption(event)}>
+            <label className="field">
+              <span>Price or service name</span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="e.g. Brow Lamination"
+                required
+                maxLength={120}
+              />
+            </label>
+            <label className="field">
+              <span>Price in ₱ (optional)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={price}
+                onChange={(event) => setPrice(event.target.value)}
+                placeholder="Leave blank if unknown"
+              />
+            </label>
+            <label className="field pricing-details">
+              <span>Details (optional)</span>
+              <textarea
+                value={details}
+                onChange={(event) => setDetails(event.target.value)}
+                rows={2}
+                maxLength={500}
+              />
+            </label>
+            <Button type="submit">Add price entry</Button>
+          </form>
+          <div className="pricing-list">
+            {categoryOptions.length ? (
+              categoryOptions.map((option) => (
+                <PriceOptionRow
+                  key={option.id}
+                  option={option}
+                  onSave={updateOption}
+                  onDelete={deleteOption}
+                />
+              ))
+            ) : (
+              <p className="gallery-message">No price entries for this service yet.</p>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function PriceOptionRow({
+  option,
+  onSave,
+  onDelete,
+}: {
+  option: GalleryPriceOption;
+  onSave: (
+    id: string,
+    changes: { name: string; details: string; price: number | null },
+  ) => Promise<boolean>;
+  onDelete: (option: GalleryPriceOption) => Promise<void>;
+}) {
+  const [name, setName] = useState(option.name);
+  const [details, setDetails] = useState(option.details);
+  const [price, setPrice] = useState(option.price?.toString() ?? "");
+  const [priceError, setPriceError] = useState("");
+
+  useEffect(() => {
+    setName(option.name);
+    setDetails(option.details);
+    setPrice(option.price?.toString() ?? "");
+  }, [option]);
+
+  return (
+    <form
+      className="pricing-option-row"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const parsedPrice = price.trim() ? Number(price) : null;
+        if (parsedPrice !== null && (!Number.isSafeInteger(parsedPrice) || parsedPrice <= 0)) {
+          setPriceError("Enter a positive whole-peso amount or leave it blank.");
+          return;
+        }
+        setPriceError("");
+        await onSave(option.id, {
+          name: name.trim(),
+          details: details.trim(),
+          price: parsedPrice,
+        });
+      }}
+    >
+      <label className="field">
+        <span>Name</span>
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          required
+          maxLength={120}
+        />
+      </label>
+      <label className="field">
+        <span>Price in ₱</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          inputMode="numeric"
+          value={price}
+          onChange={(event) => setPrice(event.target.value)}
+          placeholder="Not set"
+        />
+      </label>
+      <label className="field">
+        <span>Details</span>
+        <input
+          value={details}
+          onChange={(event) => setDetails(event.target.value)}
+          maxLength={500}
+        />
+      </label>
+      <div className="pricing-option-actions">
+        <Button type="submit" variant="secondary">
+          Save
+        </Button>
+        <button
+          type="button"
+          aria-label={`Delete ${option.name}`}
+          onClick={() => void onDelete(option)}
+        >
+          <Icon name="trash" size={17} />
+        </button>
+      </div>
+      {priceError && (
+        <p className="form-error" role="alert">
+          {priceError}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -1112,21 +1578,21 @@ function Categories({
   return (
     <section className="category-panel">
       <div className="panel-intro">
-        <h2>Organize the archive</h2>
-        <p>Add, rename, and remove categories visitors use to explore your work.</p>
+        <h2>Organize services</h2>
+        <p>Add, rename, and remove service categories visitors use to explore your work.</p>
       </div>
       <form className="add-category" onSubmit={(event) => void addCategory(event)}>
         <label className="field">
-          <span>New category</span>
+          <span>New service</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. Bridal details"
+            placeholder="e.g. Brow Lamination"
             required
             maxLength={80}
           />
         </label>
-        <Button type="submit">Add category</Button>
+        <Button type="submit">Add service</Button>
       </form>
       <div className="category-list">
         {categories.map((category, index) => (
