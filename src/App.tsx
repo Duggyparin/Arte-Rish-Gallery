@@ -364,10 +364,11 @@ function Footer() {
   );
 }
 
-function Home({ photos }: { photos: Photo[] }) {
+function Home({ photos, slowLoading }: { photos: Photo[]; slowLoading: boolean }) {
   return (
     <div className="page home-page">
       <Nav page="home" />
+      {slowLoading && <SlowConnectionNotice />}
       <main>
         <section className="hero">
           <div className="hero-copy">
@@ -474,6 +475,44 @@ function Home({ photos }: { photos: Photo[] }) {
   );
 }
 
+function useSlowLoading(active: boolean) {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setSlow(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setSlow(true), 1200);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+
+  return slow;
+}
+
+function LoadingStatus({ label, slow }: { label: string; slow: boolean }) {
+  return (
+    <div className="loading-status" role="status" aria-live="polite">
+      <span className="loading-spinner" aria-hidden="true" />
+      <span>
+        {slow
+          ? "This is taking longer than usual. Your connection may be slow; please wait…"
+          : label}
+      </span>
+    </div>
+  );
+}
+
+function SlowConnectionNotice() {
+  return (
+    <div className="slow-connection-notice" role="status" aria-live="polite">
+      <span className="loading-spinner" aria-hidden="true" />
+      <span>This is taking longer than usual. Your connection may be slow; please wait…</span>
+    </div>
+  );
+}
+
 function Lightbox({
   photo,
   photoNumber,
@@ -558,6 +597,7 @@ function Gallery({
   const [categoryId, setCategoryId] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [activePhoto, setActivePhoto] = useState<Photo | null>(null);
+  const slowLoading = useSlowLoading(loading);
   const filtered = photos.filter(
     (photo) =>
       (categoryId === "All" || photo.categoryId === categoryId) &&
@@ -628,9 +668,7 @@ function Gallery({
             <p>{error}</p>
           </div>
         ) : loading ? (
-          <div className="gallery-message" role="status">
-            Loading the gallery…
-          </div>
+          <LoadingStatus label="Loading the gallery…" slow={slowLoading} />
         ) : filtered.length ? (
           <div className="masonry">
             {filtered.map((photo, i) => (
@@ -780,6 +818,8 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [editing, setEditing] = useState<Photo | null>(null);
+  const slowAccessCheck = useSlowLoading(access === "checking");
+  const slowUpload = useSlowLoading(uploading);
   const fileRef = useRef<HTMLInputElement>(null);
   const filteredPhotos = photos.filter((photo) => matchesPhotoSearch(photo, photoSearch));
 
@@ -940,7 +980,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
       <div className="access-state">
         <Logo />
         {access === "checking" ? (
-          <p role="status">Checking owner access…</p>
+          <LoadingStatus label="Checking owner access…" slow={slowAccessCheck} />
         ) : (
           <>
             <h1>{loadError ? "Dashboard unavailable" : "Owner access only"}</h1>
@@ -1035,7 +1075,11 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                     <Sparkle size={34} />
                   </div>
                   <h3>Uploading your photos…</h3>
-                  <p>Please keep this page open until the upload finishes.</p>
+                  <p>
+                    {slowUpload
+                      ? "This is taking longer than usual. Your connection may be slow; keep this page open."
+                      : "Please keep this page open until the upload finishes."}
+                  </p>
                 </>
               ) : (
                 <>
@@ -1796,6 +1840,7 @@ export default function App() {
   const [categories, setCategories] = useState<GalleryCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const slowLoading = useSlowLoading(loading);
   navigate = setPage;
 
   const refreshGallery = useCallback(async () => {
@@ -1823,7 +1868,7 @@ export default function App() {
     void refreshGallery();
   }, [refreshGallery]);
 
-  if (page === "home") return <Home photos={photos} />;
+  if (page === "home") return <Home photos={photos} slowLoading={slowLoading} />;
   if (page === "gallery") {
     return <Gallery photos={photos} categories={categories} loading={loading} error={error} />;
   }
