@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import {
   deletePhoto,
   readGallery,
@@ -201,6 +201,7 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const [shareError, setShareError] = useState("");
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const shareUrl = new URL("/", window.location.href).toString();
 
   useEffect(() => {
@@ -240,6 +241,26 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const saveQr = () => {
+    setShareError("");
+    const canvas = qrCanvasRef.current;
+    if (!canvas) {
+      setShareError("The QR code is not ready yet. Please try again.");
+      return;
+    }
+
+    try {
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = "arte-rish-gallery-qr.png";
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      setShareError(errorMessage(error));
+    }
+  };
+
   return (
     <div className="share-backdrop" onClick={onClose}>
       <section
@@ -261,19 +282,24 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
         <p className="eyebrow">Share the collection</p>
         <h2 id="share-dialog-title">Arté Rish</h2>
         <div className="share-qr">
-          <QRCodeSVG
+          <QRCodeCanvas
+            ref={qrCanvasRef}
             value={shareUrl}
-            size={208}
+            size={512}
             level="M"
             fgColor="#3f2a18"
             bgColor="#ffffff"
-            title="Scan to open the Arté Rish gallery"
+            aria-label="Scan to open the Arté Rish gallery"
+            role="img"
           />
         </div>
         <p className="share-url">{shareUrl}</p>
         <div className="share-dialog-actions">
           <Button variant="secondary" onClick={() => void copyLink()}>
             {copied ? "Link copied" : "Copy link"}
+          </Button>
+          <Button variant="secondary" onClick={saveQr}>
+            Save QR
           </Button>
           <Button onClick={() => void shareLink()}>Share link</Button>
         </div>
