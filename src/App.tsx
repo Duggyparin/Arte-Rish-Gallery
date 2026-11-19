@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   deletePhoto,
   readGallery,
@@ -26,7 +27,8 @@ function Icon({
     | "menu"
     | "instagram"
     | "facebook"
-    | "search";
+    | "search"
+    | "qr";
   size?: number;
 }) {
   const paths: Record<string, React.ReactNode> = {
@@ -86,6 +88,12 @@ function Icon({
         <path d="m16 16 4.5 4.5" />
       </>
     ),
+    qr: (
+      <>
+        <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z" />
+        <path d="M14 14h2v2h-2zM18 14h2M18 18v2M14 18h2v2h-2z" />
+      </>
+    ),
   };
   return (
     <svg
@@ -119,12 +127,12 @@ function Sparkle({ size = 24 }: { size?: number }) {
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <button
+      type="button"
       className={`logo ${compact ? "logo--compact" : ""}`}
       onClick={() => goTo("home")}
       aria-label="Arté Rish home"
     >
-      <span className="logo-name">Arté Rish</span>
-      {!compact && <span className="logo-tagline">Beauty & wellness services</span>}
+      <img className="logo-image" src="/logo.png" alt="" />
     </button>
   );
 }
@@ -161,18 +169,121 @@ function Button({
 }
 
 function Nav({ page }: { page: Page }) {
+  const [shareOpen, setShareOpen] = useState(false);
   return (
     <nav className="nav">
       <Logo compact />
-      <div className="nav-links">
-        <button className={page === "home" ? "active" : ""} onClick={() => goTo("home")}>
-          Home
-        </button>
-        <button className={page === "gallery" ? "active" : ""} onClick={() => goTo("gallery")}>
-          Gallery
+      <div className="nav-actions">
+        <div className="nav-links">
+          <button className={page === "home" ? "active" : ""} onClick={() => goTo("home")}>
+            Home
+          </button>
+          <button className={page === "gallery" ? "active" : ""} onClick={() => goTo("gallery")}>
+            Gallery
+          </button>
+        </div>
+        <button
+          className="share-button"
+          onClick={() => setShareOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={shareOpen}
+        >
+          <Icon name="qr" size={17} />
+          Share
         </button>
       </div>
+      {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
     </nav>
+  );
+}
+
+function ShareDialog({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const shareUrl = new URL("/", window.location.href).toString();
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [onClose]);
+
+  const copyLink = async () => {
+    setShareError("");
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+    } catch (error) {
+      setShareError(errorMessage(error));
+    }
+  };
+
+  const shareLink = async () => {
+    setShareError("");
+    if (!navigator.share) {
+      await copyLink();
+      return;
+    }
+    try {
+      await navigator.share({
+        title: "Arté Rish",
+        text: "Explore the Arté Rish beauty gallery.",
+        url: shareUrl,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setShareError(errorMessage(error));
+    }
+  };
+
+  return (
+    <div className="share-backdrop" onClick={onClose}>
+      <section
+        className="share-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-dialog-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          ref={closeButtonRef}
+          type="button"
+          className="share-close"
+          onClick={onClose}
+          aria-label="Close share dialog"
+        >
+          <Icon name="close" size={18} />
+        </button>
+        <p className="eyebrow">Share the collection</p>
+        <h2 id="share-dialog-title">Arté Rish</h2>
+        <div className="share-qr">
+          <QRCodeSVG
+            value={shareUrl}
+            size={208}
+            level="M"
+            fgColor="#3f2a18"
+            bgColor="#ffffff"
+            title="Scan to open the Arté Rish gallery"
+          />
+        </div>
+        <p className="share-url">{shareUrl}</p>
+        <div className="share-dialog-actions">
+          <Button variant="secondary" onClick={() => void copyLink()}>
+            {copied ? "Link copied" : "Copy link"}
+          </Button>
+          <Button onClick={() => void shareLink()}>Share link</Button>
+        </div>
+        {shareError && (
+          <p className="form-error" role="alert">
+            {shareError}
+          </p>
+        )}
+      </section>
+    </div>
   );
 }
 
