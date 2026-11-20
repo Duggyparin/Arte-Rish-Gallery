@@ -1268,6 +1268,22 @@
   color: var(--tan);
   font-size: 11px;
 }
+.bulk-category-control select {
+  min-width: 150px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--sand);
+  border-radius: 999px;
+  color: var(--deep);
+  background: var(--surface);
+  font: inherit;
+  font-size: 11px;
+}
+.bulk-category-warning {
+  flex-basis: 100%;
+  color: var(--brown);
+  font-size: 11px;
+}
 .bulk-selection-toolbar .button {
   min-height: 40px;
   padding: 0 18px;

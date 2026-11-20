@@ -1011,6 +1011,8 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const [pricingAvailable, setPricingAvailable] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkCategorizing, setBulkCategorizing] = useState(false);
+  const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [toast, setToast] = useState("");
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -1024,6 +1026,11 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const selectedPhotos = photos.filter((photo) => selectedPhotoIds.has(photo.id));
   const allFilteredPhotosSelected =
     filteredPhotos.length > 0 && filteredPhotos.every((photo) => selectedPhotoIds.has(photo.id));
+  const incompatiblePriceCount = bulkCategoryId
+    ? selectedPhotos.filter(
+        (photo) => photo.priceTierId && photo.priceOption?.categoryId !== bulkCategoryId,
+      ).length
+    : 0;
 
   const refreshContent = async () => {
     const gallery = await readGallery(true);
@@ -1235,6 +1242,89 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
 
   const clearPhotoSelection = () => setSelectedPhotoIds(new Set());
 
+  const assignCategoryToSelectedPhotos = async () => {
+    if (!supabase || !bulkCategoryId || !selectedPhotos.length) return;
+    const category = categories.find((item) => item.id === bulkCategoryId);
+    if (!category) return;
+
+    const photosToClearPrice = selectedPhotos.filter(
+      (photo) => photo.priceTierId && photo.priceOption?.categoryId !== category.id,
+    );
+    const photosToKeepPrice = selectedPhotos.filter(
+      (photo) => !photo.priceTierId || photo.priceOption?.categoryId === category.id,
+    );
+    const updateGroups = [
+      {
+        photos: photosToKeepPrice,
+        changes: { category_id: category.id },
+        clearsPrice: false,
+      },
+      {
+        photos: photosToClearPrice,
+        changes: {
+          category_id: category.id,
+          price_tier_id: null,
+          custom_price: null,
+        },
+        clearsPrice: true,
+      },
+    ].filter((group) => group.photos.length > 0);
+
+    setBulkCategorizing(true);
+    setActionError("");
+    const failures: string[] = [];
+    const updatedIds = new Set<string>();
+    let pricesCleared = 0;
+    for (const group of updateGroups) {
+      try {
+        const { error } = await supabase
+          .from("photos")
+          .update(group.changes)
+          .in(
+            "id",
+            group.photos.map((photo) => photo.id),
+          );
+        if (error) throw error;
+        group.photos.forEach((photo) => updatedIds.add(photo.id));
+        if (group.clearsPrice) pricesCleared = group.photos.length;
+      } catch (error) {
+        failures.push(errorMessage(error));
+      }
+    }
+
+    setSelectedPhotoIds((current) => new Set([...current].filter((id) => !updatedIds.has(id))));
+    let refreshError = "";
+    try {
+      await refreshContent();
+      await onGalleryChange();
+    } catch (error) {
+      refreshError = errorMessage(error);
+    }
+    setBulkCategorizing(false);
+
+    if (failures.length || refreshError) {
+      const messages: string[] = [];
+      if (updatedIds.size) {
+        messages.push(
+          `${updatedIds.size} of ${selectedPhotos.length} photos were assigned to ${category.name}.`,
+        );
+      }
+      if (pricesCleared) {
+        messages.push(
+          `Price labels were cleared for ${pricesCleared} photo${pricesCleared === 1 ? "" : "s"} because they belong to another service.`,
+        );
+      }
+      if (failures.length) messages.push(`Some photos could not be updated: ${failures.join("; ")}`);
+      if (refreshError) messages.push(`The gallery could not be refreshed: ${refreshError}`);
+      setActionError(messages.join(" "));
+      return;
+    }
+
+    notify(
+      `${updatedIds.size} ${updatedIds.size === 1 ? "photo" : "photos"} assigned to ${category.name}.${pricesCleared ? ` Price labels were cleared for ${pricesCleared} photo${pricesCleared === 1 ? "" : "s"} because they belong to another service.` : ""}`,
+    );
+  };
+
   const signOut = async () => {
     if (!supabase) return;
     try {
@@ -1402,7 +1492,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <button
                     type="button"
                     className="text-link"
-                    disabled={filteredPhotos.length === 0 || bulkDeleting}
+                    disabled={filteredPhotos.length === 0 || bulkDeleting || bulkCategorizing}
                     onClick={toggleFilteredPhotoSelection}
                   >
                     {allFilteredPhotosSelected
@@ -1412,10 +1502,49 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <span className="bulk-selection-count" aria-live="polite">
                     {selectedPhotos.length} selected
                   </span>
+                  <label className="bulk-category-control">
+                    <span className="sr-only">Service for selected photos</span>
+                    <select
+                      aria-label="Assign service to selected photos"
+                      value={bulkCategoryId}
+                      disabled={bulkCategorizing || bulkDeleting}
+                      onChange={(event) => setBulkCategoryId(event.target.value)}
+                    >
+                      <option value="">Choose service</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {incompatiblePriceCount > 0 && (
+                    <span className="bulk-category-warning" role="status">
+                      {incompatiblePriceCount} selected{" "}
+                      {incompatiblePriceCount === 1 ? "photo has a price" : "photos have prices"}{" "}
+                      from another service.{" "}
+                      {incompatiblePriceCount === 1
+                        ? "Its price label will be cleared."
+                        : "Their price labels will be cleared."}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    disabled={
+                      selectedPhotos.length === 0 ||
+                      !bulkCategoryId ||
+                      bulkCategorizing ||
+                      bulkDeleting
+                    }
+                    onClick={() => void assignCategoryToSelectedPhotos()}
+                  >
+                    {bulkCategorizing ? "Assigning…" : "Assign service"}
+                  </button>
                   <button
                     type="button"
                     className="text-link"
-                    disabled={selectedPhotos.length === 0 || bulkDeleting}
+                    disabled={selectedPhotos.length === 0 || bulkDeleting || bulkCategorizing}
                     onClick={clearPhotoSelection}
                   >
                     Clear selection
@@ -1423,7 +1552,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <button
                     type="button"
                     className="button button--primary"
-                    disabled={selectedPhotos.length === 0 || bulkDeleting}
+                    disabled={selectedPhotos.length === 0 || bulkDeleting || bulkCategorizing}
                     onClick={() => setBulkDeleteOpen(true)}
                   >
                     Delete selected{selectedPhotos.length ? ` (${selectedPhotos.length})` : ""}
@@ -1451,7 +1580,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                             type="checkbox"
                             aria-label={`Select ${photo.title}`}
                             checked={selectedPhotoIds.has(photo.id)}
-                            disabled={bulkDeleting}
+                            disabled={bulkDeleting || bulkCategorizing}
                             onChange={() => togglePhotoSelection(photo.id)}
                           />
                         </label>
@@ -1469,7 +1598,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                         <div className="photo-actions">
                           <button
                             aria-label={`Edit ${photo.title}`}
-                            disabled={bulkDeleting}
+                            disabled={bulkDeleting || bulkCategorizing}
                             onClick={() => setEditing(photo)}
                           >
                             <Icon name="edit" size={17} />
@@ -1478,7 +1607,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                             aria-label={
                               photo.published ? `Hide ${photo.title}` : `Publish ${photo.title}`
                             }
-                            disabled={bulkDeleting}
+                            disabled={bulkDeleting || bulkCategorizing}
                             onClick={() =>
                               void updatePhoto(photo, { is_published: !photo.published })
                             }
@@ -1487,7 +1616,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                           </button>
                           <button
                             aria-label={`Delete ${photo.title}`}
-                            disabled={bulkDeleting}
+                            disabled={bulkDeleting || bulkCategorizing}
                             onClick={() => setDeletingPhoto(photo)}
                           >
                             <Icon name="trash" size={17} />
