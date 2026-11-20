@@ -1,0 +1,51 @@
+insert into public.price_options (id, category_id, name, details, price, position)
+select seed.id, category.id, seed.name, seed.details, seed.price, seed.position
+from (
+  values
+    ('facial-scrub-led-combo', 'Facial Care', 'Facial Scrub & Mask — LED Light Therapy Combo', '', 699, 3),
+    ('facial-charcoal-picosecond', 'Facial Care', 'Facial Charcoal Picosecond Laser', '', 599, 4),
+    ('facial-derma-pen-microneedling', 'Facial Care', 'Derma Pen Microneedling', '', 759, 5),
+    ('facial-korean-bb-glow-blush', 'Facial Care', 'Korean BB Glow with Blush', '', 899, 6),
+    ('facial-acne-scar-microneedling', 'Facial Care', 'Acne Scar Removal — Microneedling', '', 799, 7),
+    ('facial-stem-cell-collagen-microneedling', 'Facial Care', 'Stem Cell & Collagen — Microneedling', '', 599, 8),
+    ('gluta-cindyrella-drip', 'Gluta Drip', 'Cindyrella Glow — 500 ml drip', '', 1299, 2),
+    ('gluta-glutax-drip', 'Gluta Drip', 'GLUTAX Micro Advance — Drip', '', 699, 3),
+    ('gluta-slimming-lcarn-drip', 'Gluta Drip', 'Gluta Slimming with L-Carnitine — Drip', '', 599, 4),
+    ('gluta-aqua-diamond-vit-c-drip', 'Gluta Drip', 'Aqua Diamond Skin with Vitamin C — Drip', '', 649, 5),
+    ('gluta-push-vit-c-drip', 'Gluta Drip', 'Gluta Push with Vitamin C — Drip', '', 450, 6),
+    ('gluta-addon-collagen-c', 'Gluta Drip', 'Add-on — Collagen C', '', 250, 7),
+    ('gluta-addon-placenta', 'Gluta Drip', 'Add-on — Placenta', '', 250, 8),
+    ('gluta-addon-l-carnitine', 'Gluta Drip', 'Add-on — L-Carnitine', '', 300, 9),
+    ('gluta-addon-b-complex-vitamins', 'Gluta Drip', 'Add-on — B Complex and B Vitamins', '', 180, 10),
+    ('gluta-cindyrella-package-5', 'Gluta Drip', 'Cindyrella Glow — 5 sessions', 'Non-refundable package.', 5599, 11),
+    ('gluta-glutax-package-10', 'Gluta Drip', 'GLUTAX Micro Advance — 10 sessions', 'Non-refundable package.', 5899, 12),
+    ('gluta-slimming-package-10', 'Gluta Drip', 'Gluta Slimming Drip — 10 sessions', 'Non-refundable package.', 4999, 13),
+    ('gluta-aqua-diamond-package-10', 'Gluta Drip', 'Aqua Diamond Skin — 10 sessions', 'Non-refundable package.', 5499, 14),
+    ('gluta-push-vit-c-package-10', 'Gluta Drip', 'Gluta Push with Vitamin C — 10 sessions', 'Non-refundable package.', 3900, 15),
+    ('nails-removal-from-here', 'Nails Extension', 'Nail Extension Removal — From here', '', 70, 8),
+    ('nails-removal-not-from-here', 'Nails Extension', 'Nail Extension Removal — From another salon', '', 150, 9),
+    ('other-ipl-underarm', 'Other Services', 'IPL — Underarm Whitening & Hair Removal', '', 599, 11),
+    ('other-ipl-half-leg', 'Other Services', 'IPL — Half Leg', '', 699, 12),
+    ('other-ipl-mustache', 'Other Services', 'IPL — Mustache', '', 399, 13),
+    ('other-ipl-mustache-beard', 'Other Services', 'IPL — Mustache and Beard', '', 499, 14),
+    ('other-wax-underarm', 'Other Services', 'Cold Sugar Wax — Underarm', '', 299, 15),
+    ('other-wax-both-arms', 'Other Services', 'Cold Sugar Wax — Both Arms', '', 499, 16),
+    ('other-wax-half-leg', 'Other Services', 'Cold Sugar Wax — Half Leg', '', 699, 17),
+    ('other-wax-full-leg', 'Other Services', 'Cold Sugar Wax — Full Leg', '', 899, 18),
+    ('other-wart-removal-small', 'Other Services', 'Laser Warts Removal — Up to 3 mm', '', 499, 19),
+    ('other-wart-removal-eye-area', 'Other Services', 'Laser Warts Removal — Eye Area', '', 899, 20),
+    ('other-wart-removal-whole-face', 'Other Services', 'Laser Warts Removal — Whole Face', '', 1399, 21),
+    ('other-wart-removal-whole-neck', 'Other Services', 'Laser Warts Removal — Whole Neck', '', 1399, 22),
+    ('other-lip-filler', 'Other Services', 'Lip Filler', '', 4799, 23),
+    ('other-chin-filler', 'Other Services', 'Chin Filler', '', 5699, 24),
+    ('botox-service', 'Botox', 'Botox', 'Face Botox for fine lines / wrinkles.', 4299, 1),
+    ('botox-jawtox', 'Botox', 'Jawtox', 'Jaw muscle / smaller jaw.', 3799, 2),
+    ('botox-barbie-arms', 'Botox', 'Barbie Arms', 'Includes free Meso Lipo.', 5799, 3),
+    ('other-jawtox', 'Other Services', 'Jawtox', 'Jaw muscle / smaller jaw.', 3799, 9),
+    ('other-barbie-arms', 'Other Services', 'Barbie Arms', 'Includes free Meso Lipo.', 5799, 10)
+) as seed(id, category_name, name, details, price, position)
+join public.categories as category on category.name = seed.category_name
+on conflict (category_id, name) do update
+set details = excluded.details,
+    price = excluded.price,
+    position = excluded.position;

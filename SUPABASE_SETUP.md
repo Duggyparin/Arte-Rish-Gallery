@@ -6,7 +6,7 @@ This app uses Google sign-in through Supabase Auth for gallery admins, Postgres 
 
 1. Sign in to Supabase and create a project. Save the database password somewhere private.
 2. In the project, open **SQL Editor**, create a query, paste in [`supabase/schema.sql`](./supabase/schema.sql), and run it. This creates the tables, starter services and price options, private image bucket, and row-level access rules.
-   If you already ran the setup, run the updated script again to add service pricing and the new service categories. It is safe to rerun. Existing Nails, Lash, and Skin photo categories are remapped to their new equivalents; photos in the old Body category become uncategorized so they are not assigned an unrelated service.
+   To apply only the newly photographed menu prices to an existing setup, run [`supabase/menu-prices.sql`](./supabase/menu-prices.sql) in SQL Editor; it preserves other owner-edited prices. Re-running `schema.sql` re-applies all seeded prices and options. Existing Nails, Lash, and Skin photo categories are remapped to their new equivalents; photos in the old Body category become uncategorized so they are not assigned an unrelated service.
 3. Configure Google sign-in using the steps in section 3.
 4. Sign in once through the app's **Owner** button with the Google account that should manage the gallery. This creates its Supabase Auth user. Until you finish step 5, the app may say that the account is not an admin; that is expected.
 5. In **SQL Editor**, register that Google account as a gallery admin. Replace the example address:
