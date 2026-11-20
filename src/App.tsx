@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import {
+  deletePhotos,
   deletePhoto,
   readGallery,
   uploadPhoto,
@@ -374,6 +375,63 @@ function DeletePhotoDialog({
   );
 }
 
+function BulkDeletePhotoDialog({
+  photoCount,
+  onClose,
+  onConfirm,
+}: {
+  photoCount: number;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    confirmButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !deleting) onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [deleting, onClose]);
+
+  return (
+    <div className="share-backdrop" onClick={() => !deleting && onClose()}>
+      <section
+        className="share-dialog delete-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bulk-delete-photos-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p className="eyebrow">Remove from your archive</p>
+        <h2 id="bulk-delete-photos-title">
+          Delete {photoCount} {photoCount === 1 ? "photo" : "photos"}?
+        </h2>
+        <p>The selected photos and their stored images will be permanently deleted.</p>
+        <div className="delete-dialog-actions">
+          <Button variant="secondary" disabled={deleting} onClick={onClose}>
+            Cancel
+          </Button>
+          <button
+            ref={confirmButtonRef}
+            type="button"
+            className="button button--primary"
+            disabled={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              await onConfirm();
+            }}
+          >
+            {deleting ? "Deleting…" : "Delete permanently"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function LeafDivider() {
   return (
     <div className="leaf-divider" aria-hidden="true">
@@ -597,7 +655,7 @@ function Lightbox({
       document.body.style.overflow = "";
     };
   }, [onClose, onMove]);
-  const price = photo.customPrice ?? photo.priceOption?.price ?? undefined;
+  const price = getPhotoPrice(photo);
   return (
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={photo.title}>
       <button className="lightbox-close" onClick={onClose} aria-label="Close">
@@ -611,17 +669,11 @@ function Lightbox({
           <span className="chip chip--small">{photo.category}</span>
           <h2>{photo.title}</h2>
           <p>{photo.caption}</p>
-          {price !== undefined && (
+          {price !== null && (
             <div className="lightbox-price">
               <span>{photo.priceOption?.name ?? "Design price"}</span>
               {photo.priceOption?.details && <small>{photo.priceOption.details}</small>}
-              <strong>
-                {new Intl.NumberFormat("en-PH", {
-                  style: "currency",
-                  currency: "PHP",
-                  maximumFractionDigits: 0,
-                }).format(price)}
-              </strong>
+              <strong>{formatPhotoPrice(price)}</strong>
             </div>
           )}
         </div>
@@ -654,14 +706,22 @@ function Gallery({
 }) {
   const [categoryId, setCategoryId] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [priceFilter, setPriceFilter] = useState<number | null>(null);
   const [activePhoto, setActivePhoto] = useState<Photo | null>(null);
   const slowLoading = useSlowLoading(loading);
   const availablePhotos = photos.filter((photo) => !photo.imageError);
   const unavailablePhotoCount = photos.length - availablePhotos.length;
-  const filtered = photos.filter(
+  const availablePrices = [
+    ...new Set(
+      availablePhotos
+        .map(getPhotoPrice)
+        .filter((price): price is number => price !== null),
+    ),
+  ].sort((a, b) => a - b);
+  const filtered = availablePhotos.filter(
     (photo) =>
-      !photo.imageError &&
       (categoryId === "All" || photo.categoryId === categoryId) &&
+      (priceFilter === null || getPhotoPrice(photo) === priceFilter) &&
       matchesPhotoSearch(photo, searchQuery),
   );
   useEffect(() => {
@@ -705,6 +765,25 @@ function Gallery({
             </button>
           ))}
         </div>
+        {availablePrices.length > 0 && (
+          <label className="gallery-price-filter">
+            <span>Filter by price</span>
+            <select
+              aria-label="Filter designs by price"
+              value={priceFilter ?? ""}
+              onChange={(event) =>
+                setPriceFilter(event.target.value ? Number(event.target.value) : null)
+              }
+            >
+              <option value="">All prices</option>
+              {availablePrices.map((price) => (
+                <option key={price} value={price}>
+                  {formatPhotoPrice(price)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="search-field gallery-search">
           <Icon name="search" size={18} />
           <input
@@ -741,19 +820,25 @@ function Gallery({
           <LoadingStatus label="Loading the gallery…" slow={slowLoading} />
         ) : filtered.length ? (
           <div className="masonry">
-            {filtered.map((photo, i) => (
-              <button className="photo-card" key={photo.id} onClick={() => setActivePhoto(photo)}>
-                <img src={photo.src} alt={photo.title} />
-                <span className="photo-number">{String(i + 1).padStart(2, "0")}</span>
-                <span className="photo-overlay">
-                  <span>{photo.category}</span>
-                  <strong>{photo.title}</strong>
-                  <i>
-                    <Icon name="arrow" />
-                  </i>
-                </span>
-              </button>
-            ))}
+            {filtered.map((photo, i) => {
+              const price = getPhotoPrice(photo);
+              return (
+                <button className="photo-card" key={photo.id} onClick={() => setActivePhoto(photo)}>
+                  <img src={photo.src} alt={photo.title} />
+                  {price !== null && (
+                    <span className="photo-price-badge">{formatPhotoPrice(price)}</span>
+                  )}
+                  <span className="photo-number">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="photo-overlay">
+                    <span>{photo.category}</span>
+                    <strong>{photo.title}</strong>
+                    <i>
+                      <Icon name="arrow" />
+                    </i>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         ) : (
           <div className="empty-state">
@@ -761,22 +846,27 @@ function Gallery({
             <h2>
               {searchQuery.trim()
                 ? "No designs found."
-                : unavailablePhotoCount
-                  ? "Some images need attention."
-                  : "A quiet corner, for now."}
+                : priceFilter !== null
+                  ? "No designs at this price."
+                  : unavailablePhotoCount
+                    ? "Some images need attention."
+                    : "A quiet corner, for now."}
             </h2>
             <p>
               {searchQuery.trim()
                 ? `No designs match "${searchQuery.trim()}". Try another search.`
-                : unavailablePhotoCount
-                  ? "The owner can remove and re-upload the unavailable photos."
-                  : "No photos in this category yet."}
+                : priceFilter !== null
+                  ? `No designs match ${formatPhotoPrice(priceFilter)} with the current filters.`
+                  : unavailablePhotoCount
+                    ? "The owner can remove and re-upload the unavailable photos."
+                    : "No photos in this category yet."}
             </p>
-            {(searchQuery.trim() || categoryId !== "All") && (
+            {(searchQuery.trim() || categoryId !== "All" || priceFilter !== null) && (
               <button
                 onClick={() => {
                   setSearchQuery("");
                   setCategoryId("All");
+                  setPriceFilter(null);
                 }}
                 className="text-link"
               >
@@ -875,6 +965,18 @@ function errorMessage(error: unknown) {
   return "Something went wrong. Please try again.";
 }
 
+function getPhotoPrice(photo: Photo) {
+  return photo.customPrice ?? photo.priceOption?.price ?? null;
+}
+
+function formatPhotoPrice(price: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(price);
+}
+
 function matchesPhotoSearch(photo: Photo, query: string) {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return true;
@@ -888,24 +990,32 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const [access, setAccess] = useState<"checking" | "ready" | "denied">("checking");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photoSearch, setPhotoSearch] = useState("");
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(() => new Set());
   const [categories, setCategories] = useState<GalleryCategory[]>([]);
   const [priceOptions, setPriceOptions] = useState<GalleryPriceOption[]>([]);
   const [pricingAvailable, setPricingAvailable] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [toast, setToast] = useState("");
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [editing, setEditing] = useState<Photo | null>(null);
   const [deletingPhoto, setDeletingPhoto] = useState<Photo | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const slowAccessCheck = useSlowLoading(access === "checking");
   const slowUpload = useSlowLoading(uploading);
   const fileRef = useRef<HTMLInputElement>(null);
   const filteredPhotos = photos.filter((photo) => matchesPhotoSearch(photo, photoSearch));
+  const selectedPhotos = photos.filter((photo) => selectedPhotoIds.has(photo.id));
+  const allFilteredPhotosSelected =
+    filteredPhotos.length > 0 && filteredPhotos.every((photo) => selectedPhotoIds.has(photo.id));
 
   const refreshContent = async () => {
     const gallery = await readGallery(true);
     setCategories(gallery.categories);
     setPhotos(gallery.photos);
+    const currentPhotoIds = new Set(gallery.photos.map((photo) => photo.id));
+    setSelectedPhotoIds((current) => new Set([...current].filter((id) => currentPhotoIds.has(id))));
     setPriceOptions(gallery.priceOptions);
     setPricingAvailable(gallery.pricingAvailable);
   };
@@ -1051,6 +1161,64 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
       setActionError(failure);
     }
   };
+
+  const removeSelectedPhotos = async () => {
+    const photosToDelete = photos.filter((photo) => selectedPhotoIds.has(photo.id));
+    if (!photosToDelete.length) return;
+
+    setBulkDeleting(true);
+    setActionError("");
+    let deleteError = "";
+    try {
+      await deletePhotos(photosToDelete);
+    } catch (error) {
+      deleteError = errorMessage(error);
+    }
+
+    let refreshError = "";
+    try {
+      await refreshContent();
+      await onGalleryChange();
+    } catch (error) {
+      refreshError = errorMessage(error);
+    }
+    setBulkDeleting(false);
+    setBulkDeleteOpen(false);
+
+    if (deleteError || refreshError) {
+      const messages: string[] = [];
+      if (deleteError) messages.push(deleteError);
+      if (refreshError) {
+        messages.push(`The gallery could not be refreshed: ${refreshError}`);
+      }
+      setActionError(messages.join(" "));
+      return;
+    }
+
+    notify(`${photosToDelete.length} ${photosToDelete.length === 1 ? "photo" : "photos"} deleted.`);
+  };
+
+  const togglePhotoSelection = (photoId: string) => {
+    setSelectedPhotoIds((current) => {
+      const next = new Set(current);
+      if (next.has(photoId)) next.delete(photoId);
+      else next.add(photoId);
+      return next;
+    });
+  };
+
+  const toggleFilteredPhotoSelection = () => {
+    setSelectedPhotoIds((current) => {
+      const next = new Set(current);
+      for (const photo of filteredPhotos) {
+        if (allFilteredPhotosSelected) next.delete(photo.id);
+        else next.add(photo.id);
+      }
+      return next;
+    });
+  };
+
+  const clearPhotoSelection = () => setSelectedPhotoIds(new Set());
 
   const signOut = async () => {
     if (!supabase) return;
@@ -1214,10 +1382,46 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <Button onClick={() => fileRef.current?.click()}>Add photos</Button>
                 </div>
               </div>
+              {photos.length > 0 && (
+                <div className="bulk-selection-toolbar">
+                  <button
+                    type="button"
+                    className="text-link"
+                    disabled={filteredPhotos.length === 0 || bulkDeleting}
+                    onClick={toggleFilteredPhotoSelection}
+                  >
+                    {allFilteredPhotosSelected
+                      ? "Deselect shown"
+                      : `Select all ${filteredPhotos.length} shown`}
+                  </button>
+                  <span className="bulk-selection-count" aria-live="polite">
+                    {selectedPhotos.length} selected
+                  </span>
+                  <button
+                    type="button"
+                    className="text-link"
+                    disabled={selectedPhotos.length === 0 || bulkDeleting}
+                    onClick={clearPhotoSelection}
+                  >
+                    Clear selection
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--primary"
+                    disabled={selectedPhotos.length === 0 || bulkDeleting}
+                    onClick={() => setBulkDeleteOpen(true)}
+                  >
+                    Delete selected{selectedPhotos.length ? ` (${selectedPhotos.length})` : ""}
+                  </button>
+                </div>
+              )}
               {filteredPhotos.length ? (
                 <div className="admin-grid">
                   {filteredPhotos.map((photo) => (
-                    <article className="admin-photo" key={photo.id}>
+                    <article
+                      className={`admin-photo ${selectedPhotoIds.has(photo.id) ? "admin-photo--selected" : ""}`}
+                      key={photo.id}
+                    >
                       <div className="admin-photo-image">
                         <img src={photo.src} alt={photo.title} />
                         <span>
@@ -1227,6 +1431,15 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                               ? "Published"
                               : "Hidden"}
                         </span>
+                        <label className="photo-select-toggle" title={`Select ${photo.title}`}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${photo.title}`}
+                            checked={selectedPhotoIds.has(photo.id)}
+                            disabled={bulkDeleting}
+                            onChange={() => togglePhotoSelection(photo.id)}
+                          />
+                        </label>
                       </div>
                       <div className="admin-photo-meta">
                         <div>
@@ -1241,6 +1454,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                         <div className="photo-actions">
                           <button
                             aria-label={`Edit ${photo.title}`}
+                            disabled={bulkDeleting}
                             onClick={() => setEditing(photo)}
                           >
                             <Icon name="edit" size={17} />
@@ -1249,6 +1463,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                             aria-label={
                               photo.published ? `Hide ${photo.title}` : `Publish ${photo.title}`
                             }
+                            disabled={bulkDeleting}
                             onClick={() =>
                               void updatePhoto(photo, { is_published: !photo.published })
                             }
@@ -1257,6 +1472,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                           </button>
                           <button
                             aria-label={`Delete ${photo.title}`}
+                            disabled={bulkDeleting}
                             onClick={() => setDeletingPhoto(photo)}
                           >
                             <Icon name="trash" size={17} />
@@ -1323,6 +1539,13 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
             await removePhoto(deletingPhoto);
             setDeletingPhoto(null);
           }}
+        />
+      )}
+      {bulkDeleteOpen && (
+        <BulkDeletePhotoDialog
+          photoCount={selectedPhotos.length}
+          onClose={() => setBulkDeleteOpen(false)}
+          onConfirm={removeSelectedPhotos}
         />
       )}
     </div>

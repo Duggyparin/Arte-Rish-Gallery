@@ -311,3 +311,26 @@ export async function deletePhoto(photo: GalleryPhoto) {
     );
   }
 }
+
+export async function deletePhotos(photos: GalleryPhoto[]) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  if (!photos.length) return;
+
+  const { error: deleteError } = await supabase
+    .from("photos")
+    .delete()
+    .in(
+      "id",
+      photos.map((photo) => photo.id),
+    );
+  if (deleteError) throw deleteError;
+
+  const { error: storageError } = await supabase.storage
+    .from(GALLERY_BUCKET)
+    .remove(photos.map((photo) => photo.storagePath));
+  if (storageError) {
+    throw new Error(
+      `The photo records were deleted, but one or more stored images could not be removed: ${storageError.message}`,
+    );
+  }
+}
