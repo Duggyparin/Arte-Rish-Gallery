@@ -19,6 +19,7 @@ export type GalleryPhoto = {
   id: string;
   storagePath: string;
   src: string;
+  imageError: string | null;
   title: string;
   caption: string;
   categoryId: string | null;
@@ -49,6 +50,27 @@ type PriceOptionRow = {
   details: string;
   price: number | null;
   position: number;
+};
+
+const imageTypesByExtension: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  avif: "image/avif",
+  heic: "image/heic",
+  heif: "image/heif",
+  gif: "image/gif",
+};
+
+const imageExtensionsByType: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/avif": "avif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/gif": "gif",
 };
 
 function isMissingPricingSchemaError(code: string, message: string) {
@@ -121,7 +143,9 @@ export async function readGallery(includeUnpublished = false) {
       )
     : { data: [], error: null };
   if (signedUrls.error) throw signedUrls.error;
-  const urlsByPath = new Map(signedUrls.data.map((item) => [item.path, item.signedUrl]));
+  const signedUrlResults = new Map(
+    signedUrls.data.map((item, index) => [item.path ?? rows[index]?.storage_path, item]),
+  );
   const categories: GalleryCategory[] = categoryRows;
   const namesById = new Map(categories.map((category) => [category.id, category.name]));
   const priceOptions: GalleryPriceOption[] = priceOptionRows.map((option) => ({
@@ -134,12 +158,15 @@ export async function readGallery(includeUnpublished = false) {
   }));
   const priceOptionsById = new Map(priceOptions.map((option) => [option.id, option]));
   const photos: GalleryPhoto[] = rows.map((photo) => {
-    const src = urlsByPath.get(photo.storage_path);
-    if (!src) throw new Error(`Could not create an image link for ${photo.title}.`);
+    const signedUrlResult = signedUrlResults.get(photo.storage_path);
+    const imageError =
+      signedUrlResult?.error ??
+      (signedUrlResult?.signedUrl ? null : "Supabase did not return a signed URL.");
     return {
       id: photo.id,
       storagePath: photo.storage_path,
-      src,
+      src: signedUrlResult?.signedUrl ?? "/favicon.png",
+      imageError,
       title: photo.title,
       caption: photo.caption,
       categoryId: photo.category_id,
@@ -159,16 +186,26 @@ export async function readGallery(includeUnpublished = false) {
 
 export async function uploadPhoto(file: File, categoryId: string | null) {
   if (!supabase) throw new Error("Supabase is not configured.");
-  if (!file.type.startsWith("image/")) throw new Error(`${file.name} is not an image.`);
   if (file.size > 20 * 1024 * 1024) throw new Error(`${file.name} is larger than 20 MB.`);
 
-  const extension = file.name.split(".").pop()?.toLowerCase() || "image";
+  const fileExtension = /\.([a-z0-9]+)$/i.exec(file.name)?.[1]?.toLowerCase();
+  const reportedType = file.type.toLowerCase();
+  const contentType = imageExtensionsByType[reportedType]
+    ? reportedType
+    : imageTypesByExtension[fileExtension ?? ""];
+  const extension = contentType ? imageExtensionsByType[contentType] : undefined;
+  if (!contentType || !extension) {
+    throw new Error(
+      `${file.name} is not a supported image. Use JPG, PNG, WebP, AVIF, HEIC, HEIF, or GIF.`,
+    );
+  }
+
   const storagePath = `${crypto.randomUUID()}.${extension}`;
   const { error: uploadError } = await supabase.storage
     .from(GALLERY_BUCKET)
     .upload(storagePath, file, {
       cacheControl: "3600",
-      contentType: file.type,
+      contentType,
       upsert: false,
     });
   if (uploadError) throw uploadError;

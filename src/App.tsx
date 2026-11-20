@@ -365,6 +365,7 @@ function Footer() {
 }
 
 function Home({ photos, slowLoading }: { photos: Photo[]; slowLoading: boolean }) {
+  const availablePhotos = photos.filter((photo) => !photo.imageError);
   return (
     <div className="page home-page">
       <Nav page="home" />
@@ -392,8 +393,8 @@ function Home({ photos, slowLoading }: { photos: Photo[]; slowLoading: boolean }
           </div>
           <div className="hero-visual">
             <div className="arch arch--main">
-              {photos[0] ? (
-                <img src={photos[0].src} alt={photos[0].title} />
+              {availablePhotos[0] ? (
+                <img src={availablePhotos[0].src} alt={availablePhotos[0].title} />
               ) : (
                 <div className="gallery-placeholder">
                   <Sparkle size={38} />
@@ -443,9 +444,9 @@ function Home({ photos, slowLoading }: { photos: Photo[]; slowLoading: boolean }
               View the full gallery <Icon name="arrow" size={16} />
             </button>
           </div>
-          {photos.length ? (
+          {availablePhotos.length ? (
             <div className="preview-strip">
-              {photos.slice(0, 5).map((photo, i) => (
+              {availablePhotos.slice(0, 5).map((photo, i) => (
                 <button
                   key={photo.id}
                   className={`preview-card preview-card--${i}`}
@@ -598,8 +599,11 @@ function Gallery({
   const [searchQuery, setSearchQuery] = useState("");
   const [activePhoto, setActivePhoto] = useState<Photo | null>(null);
   const slowLoading = useSlowLoading(loading);
+  const availablePhotos = photos.filter((photo) => !photo.imageError);
+  const unavailablePhotoCount = photos.length - availablePhotos.length;
   const filtered = photos.filter(
     (photo) =>
+      !photo.imageError &&
       (categoryId === "All" || photo.categoryId === categoryId) &&
       matchesPhotoSearch(photo, searchQuery),
   );
@@ -656,6 +660,15 @@ function Gallery({
         </label>
       </header>
       <main className="gallery-content">
+        {unavailablePhotoCount > 0 && !loading && !error && (
+          <div className="gallery-message" role="status">
+            <p>
+              {unavailablePhotoCount} {unavailablePhotoCount === 1 ? "photo could" : "photos could"}{" "}
+              not be loaded. The owner can remove and re-upload{" "}
+              {unavailablePhotoCount === 1 ? "it" : "them"}.
+            </p>
+          </div>
+        )}
         <div className="gallery-count">
           <span>
             {filtered.length} {filtered.length === 1 ? "piece" : "pieces"}
@@ -688,11 +701,19 @@ function Gallery({
         ) : (
           <div className="empty-state">
             <Sparkle size={42} />
-            <h2>{searchQuery.trim() ? "No designs found." : "A quiet corner, for now."}</h2>
+            <h2>
+              {searchQuery.trim()
+                ? "No designs found."
+                : unavailablePhotoCount
+                  ? "Some images need attention."
+                  : "A quiet corner, for now."}
+            </h2>
             <p>
               {searchQuery.trim()
                 ? `No designs match "${searchQuery.trim()}". Try another search.`
-                : "No photos in this category yet."}
+                : unavailablePhotoCount
+                  ? "The owner can remove and re-upload the unavailable photos."
+                  : "No photos in this category yet."}
             </p>
             {(searchQuery.trim() || categoryId !== "All") && (
               <button
@@ -1126,12 +1147,23 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                     <article className="admin-photo" key={photo.id}>
                       <div className="admin-photo-image">
                         <img src={photo.src} alt={photo.title} />
-                        <span>{photo.published ? "Published" : "Hidden"}</span>
+                        <span>
+                          {photo.imageError
+                            ? "Image unavailable"
+                            : photo.published
+                              ? "Published"
+                              : "Hidden"}
+                        </span>
                       </div>
                       <div className="admin-photo-meta">
                         <div>
                           <h3>{photo.title}</h3>
                           <p>{photo.category}</p>
+                          {photo.imageError && (
+                            <p className="form-error" role="status">
+                              {photo.imageError} Remove and re-upload this photo.
+                            </p>
+                          )}
                         </div>
                         <div className="photo-actions">
                           <button
