@@ -317,6 +317,63 @@ function ShareDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+function DeletePhotoDialog({
+  photo,
+  onClose,
+  onConfirm,
+}: {
+  photo: Photo;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    confirmButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !deleting) onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [deleting, onClose]);
+
+  return (
+    <div className="share-backdrop" onClick={() => !deleting && onClose()}>
+      <section
+        className="share-dialog delete-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-photo-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p className="eyebrow">Remove from your archive</p>
+        <h2 id="delete-photo-title">Delete this photo?</h2>
+        <p>
+          <strong>{photo.title}</strong> and its stored image will be permanently deleted.
+        </p>
+        <div className="delete-dialog-actions">
+          <Button variant="secondary" disabled={deleting} onClick={onClose}>
+            Cancel
+          </Button>
+          <button
+            ref={confirmButtonRef}
+            type="button"
+            className="button button--primary"
+            disabled={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              await onConfirm();
+            }}
+          >
+            {deleting ? "Deleting…" : "Delete permanently"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function LeafDivider() {
   return (
     <div className="leaf-divider" aria-hidden="true">
@@ -839,6 +896,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [editing, setEditing] = useState<Photo | null>(null);
+  const [deletingPhoto, setDeletingPhoto] = useState<Photo | null>(null);
   const slowAccessCheck = useSlowLoading(access === "checking");
   const slowUpload = useSlowLoading(uploading);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -964,7 +1022,6 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   };
 
   const removePhoto = async (photo: Photo) => {
-    if (!window.confirm(`Delete "${photo.title}" permanently?`)) return;
     setActionError("");
     try {
       await deletePhoto(photo);
@@ -1184,7 +1241,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                           </button>
                           <button
                             aria-label={`Delete ${photo.title}`}
-                            onClick={() => void removePhoto(photo)}
+                            onClick={() => setDeletingPhoto(photo)}
                           >
                             <Icon name="trash" size={17} />
                           </button>
@@ -1239,6 +1296,16 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
             const saved = await updatePhoto(editing, changes);
             if (saved) setEditing(null);
             return saved;
+          }}
+        />
+      )}
+      {deletingPhoto && (
+        <DeletePhotoDialog
+          photo={deletingPhoto}
+          onClose={() => setDeletingPhoto(null)}
+          onConfirm={async () => {
+            await removePhoto(deletingPhoto);
+            setDeletingPhoto(null);
           }}
         />
       )}
