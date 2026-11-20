@@ -1256,11 +1256,16 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+.admin-photo-meta > div:first-child {
+  min-width: 0;
 }
 .admin-photo-meta h3 {
   font: 400 20px var(--serif);
   color: var(--brown);
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .admin-photo-meta p {
   margin: 3px 0 0;
@@ -1271,6 +1276,7 @@
 }
 .photo-actions {
   display: flex;
+  flex-shrink: 0;
 }
 .photo-actions button,
 .category-row button {

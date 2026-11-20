@@ -77,6 +77,14 @@ const maxOptimizedImageDimension = 2400;
 const imageOptimizationSizeThreshold = 1024 * 1024;
 const optimizableImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+function isImageOptimizationUnavailable(error: unknown) {
+  return (
+    error instanceof TypeError ||
+    (error instanceof DOMException &&
+      ["EncodingError", "InvalidStateError", "NotSupportedError"].includes(error.name))
+  );
+}
+
 async function optimizeImage(file: File, contentType: string) {
   if (!optimizableImageTypes.has(contentType) || file.size <= imageOptimizationSizeThreshold) {
     return { file, optimized: false, skipped: false };
@@ -85,20 +93,9 @@ async function optimizeImage(file: File, contentType: string) {
     return { file, optimized: false, skipped: true };
   }
 
-  let bitmap: ImageBitmap;
+  let bitmap: ImageBitmap | null = null;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-  } catch (error) {
-    if (
-      error instanceof DOMException &&
-      ["EncodingError", "InvalidStateError", "NotSupportedError"].includes(error.name)
-    ) {
-      return { file, optimized: false, skipped: true };
-    }
-    throw error;
-  }
-
-  try {
     const scale = Math.min(1, maxOptimizedImageDimension / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -126,8 +123,13 @@ async function optimizeImage(file: File, contentType: string) {
       optimized: true,
       skipped: false,
     };
+  } catch (error) {
+    if (isImageOptimizationUnavailable(error)) {
+      return { file, optimized: false, skipped: true };
+    }
+    throw error;
   } finally {
-    bitmap.close();
+    bitmap?.close();
   }
 }
 
