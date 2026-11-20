@@ -73,6 +73,64 @@ const imageExtensionsByType: Record<string, string> = {
   "image/gif": "gif",
 };
 
+const maxOptimizedImageDimension = 2400;
+const imageOptimizationSizeThreshold = 1024 * 1024;
+const optimizableImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+async function optimizeImage(file: File, contentType: string) {
+  if (!optimizableImageTypes.has(contentType) || file.size <= imageOptimizationSizeThreshold) {
+    return { file, optimized: false, skipped: false };
+  }
+  if (typeof createImageBitmap !== "function") {
+    return { file, optimized: false, skipped: true };
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      ["EncodingError", "InvalidStateError", "NotSupportedError"].includes(error.name)
+    ) {
+      return { file, optimized: false, skipped: true };
+    }
+    throw error;
+  }
+
+  try {
+    const scale = Math.min(1, maxOptimizedImageDimension / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return { file, optimized: false, skipped: true };
+
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const optimizedBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/webp", 0.86);
+    });
+    if (!optimizedBlob || optimizedBlob.type !== "image/webp") {
+      return { file, optimized: false, skipped: true };
+    }
+    if (optimizedBlob.size >= file.size) {
+      return { file, optimized: false, skipped: false };
+    }
+
+    const baseName = file.name.replace(/\.[^.]+$/, "").trim() || "photo";
+    return {
+      file: new File([optimizedBlob], `${baseName}.webp`, {
+        type: "image/webp",
+        lastModified: file.lastModified,
+      }),
+      optimized: true,
+      skipped: false,
+    };
+  } finally {
+    bitmap.close();
+  }
+}
+
 function isMissingPricingSchemaError(code: string, message: string) {
   const normalizedMessage = message.toLowerCase();
   return (
@@ -200,12 +258,16 @@ export async function uploadPhoto(file: File, categoryId: string | null) {
     );
   }
 
-  const storagePath = `${crypto.randomUUID()}.${extension}`;
+  const optimization = await optimizeImage(file, contentType);
+  const uploadFile = optimization.file;
+  const uploadContentType = uploadFile.type || contentType;
+  const uploadExtension = imageExtensionsByType[uploadContentType] ?? extension;
+  const storagePath = `${crypto.randomUUID()}.${uploadExtension}`;
   const { error: uploadError } = await supabase.storage
     .from(GALLERY_BUCKET)
-    .upload(storagePath, file, {
+    .upload(storagePath, uploadFile, {
       cacheControl: "3600",
-      contentType,
+      contentType: uploadContentType,
       upsert: false,
     });
   if (uploadError) throw uploadError;
@@ -229,6 +291,8 @@ export async function uploadPhoto(file: File, categoryId: string | null) {
     }
     throw insertError;
   }
+
+  return { optimized: optimization.optimized, optimizationSkipped: optimization.skipped };
 }
 
 export async function deletePhoto(photo: GalleryPhoto) {

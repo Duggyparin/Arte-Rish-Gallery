@@ -973,9 +973,13 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
     setUploading(true);
     setActionError("");
     const failures: string[] = [];
+    let optimizedCount = 0;
+    let optimizationSkippedCount = 0;
     for (const file of selectedFiles) {
       try {
-        await uploadPhoto(file, categories[0]?.id ?? null);
+        const result = await uploadPhoto(file, categories[0]?.id ?? null);
+        if (result.optimized) optimizedCount += 1;
+        if (result.optimizationSkipped) optimizationSkippedCount += 1;
       } catch (error) {
         failures.push(`${file.name}: ${errorMessage(error)}`);
       }
@@ -987,9 +991,18 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
     if (failures.length) {
       setActionError(failures.join(" "));
     } else {
-      notify(
+      const uploadSummary = [
         `${selectedFiles.length} ${selectedFiles.length === 1 ? "photo" : "photos"} uploaded.`,
-      );
+        optimizedCount > 0
+          ? `${optimizedCount} ${optimizedCount === 1 ? "image was" : "images were"} optimized for faster loading.`
+          : "",
+        optimizationSkippedCount > 0
+          ? `${optimizationSkippedCount} large ${optimizationSkippedCount === 1 ? "image was" : "images were"} uploaded unchanged because this browser could not optimize ${optimizationSkippedCount === 1 ? "it" : "them"}.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      notify(uploadSummary);
     }
   };
 
@@ -1168,7 +1181,10 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <p>
                     Drop multiple photos here, or <u>browse your files</u>
                   </p>
-                  <small>JPG, PNG, WebP or HEIC · up to 20MB each</small>
+                  <small>
+                    Image files up to 20MB. Large JPG, PNG and WebP files are optimized
+                    automatically.
+                  </small>
                 </>
               )}
             </section>
