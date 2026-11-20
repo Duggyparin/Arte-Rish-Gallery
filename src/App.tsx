@@ -1012,7 +1012,10 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const [uploading, setUploading] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkCategorizing, setBulkCategorizing] = useState(false);
+  const [bulkPricing, setBulkPricing] = useState(false);
   const [bulkCategoryId, setBulkCategoryId] = useState("");
+  const [bulkPriceTierId, setBulkPriceTierId] = useState("");
+  const [bulkCustomPrice, setBulkCustomPrice] = useState("");
   const [toast, setToast] = useState("");
   const [actionError, setActionError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -1024,8 +1027,24 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const filteredPhotos = photos.filter((photo) => matchesPhotoSearch(photo, photoSearch));
   const selectedPhotos = photos.filter((photo) => selectedPhotoIds.has(photo.id));
+  const firstSelectedCategoryId = selectedPhotos[0]?.categoryId ?? null;
+  const selectedPriceCategoryId =
+    firstSelectedCategoryId &&
+    selectedPhotos.every((photo) => photo.categoryId === firstSelectedCategoryId)
+      ? firstSelectedCategoryId
+      : null;
+  const selectedBulkPriceOption = priceOptions.find(
+    (option) => option.id === bulkPriceTierId && option.categoryId === selectedPriceCategoryId,
+  );
+  const bulkPriceOptions = priceOptions.filter(
+    (option) => option.categoryId === selectedPriceCategoryId,
+  );
+  const selectedCustomPriceCount = selectedPhotos.filter(
+    (photo) => photo.customPrice !== null,
+  ).length;
   const allFilteredPhotosSelected =
     filteredPhotos.length > 0 && filteredPhotos.every((photo) => selectedPhotoIds.has(photo.id));
+  const bulkActionInProgress = bulkDeleting || bulkCategorizing || bulkPricing;
   const incompatiblePriceCount = bulkCategoryId
     ? selectedPhotos.filter(
         (photo) => photo.priceTierId && photo.priceOption?.categoryId !== bulkCategoryId,
@@ -1325,6 +1344,49 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
     );
   };
 
+  const assignPriceToSelectedPhotos = async () => {
+    if (!supabase || !selectedBulkPriceOption || !selectedPhotos.length) return;
+    const parsedCustomPrice = bulkCustomPrice.trim() ? Number(bulkCustomPrice) : null;
+    if (
+      parsedCustomPrice !== null &&
+      (!Number.isSafeInteger(parsedCustomPrice) || parsedCustomPrice <= 0)
+    ) {
+      setActionError("Enter a positive whole-peso amount, or leave the override blank.");
+      return;
+    }
+
+    setBulkPricing(true);
+    setActionError("");
+    try {
+      const { error } = await supabase
+        .from("photos")
+        .update({
+          price_tier_id: selectedBulkPriceOption.id,
+          custom_price: parsedCustomPrice,
+        })
+        .in(
+          "id",
+          selectedPhotos.map((photo) => photo.id),
+        );
+      if (error) throw error;
+
+      const photoCount = selectedPhotos.length;
+      const assignedPhotoIds = new Set(selectedPhotos.map((photo) => photo.id));
+      setSelectedPhotoIds((current) =>
+        new Set([...current].filter((id) => !assignedPhotoIds.has(id))),
+      );
+      if (await reload()) {
+        notify(
+          `${photoCount} ${photoCount === 1 ? "photo" : "photos"} assigned to ${selectedBulkPriceOption.name}${parsedCustomPrice === null ? "" : ` at ${formatPhotoPrice(parsedCustomPrice)}`}.`,
+        );
+      }
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setBulkPricing(false);
+    }
+  };
+
   const signOut = async () => {
     if (!supabase) return;
     try {
@@ -1492,7 +1554,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <button
                     type="button"
                     className="text-link"
-                    disabled={filteredPhotos.length === 0 || bulkDeleting || bulkCategorizing}
+                    disabled={filteredPhotos.length === 0 || bulkActionInProgress}
                     onClick={toggleFilteredPhotoSelection}
                   >
                     {allFilteredPhotosSelected
@@ -1507,7 +1569,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                     <select
                       aria-label="Assign service to selected photos"
                       value={bulkCategoryId}
-                      disabled={bulkCategorizing || bulkDeleting}
+                      disabled={bulkActionInProgress}
                       onChange={(event) => setBulkCategoryId(event.target.value)}
                     >
                       <option value="">Choose service</option>
@@ -1534,17 +1596,88 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                     disabled={
                       selectedPhotos.length === 0 ||
                       !bulkCategoryId ||
-                      bulkCategorizing ||
-                      bulkDeleting
+                      bulkActionInProgress
                     }
                     onClick={() => void assignCategoryToSelectedPhotos()}
                   >
                     {bulkCategorizing ? "Assigning…" : "Assign service"}
                   </button>
+                  {pricingAvailable && (
+                    <>
+                      <label className="bulk-price-control">
+                        <span className="sr-only">Price for selected photos</span>
+                        <select
+                          aria-label="Price for selected photos"
+                          value={selectedBulkPriceOption ? bulkPriceTierId : ""}
+                          disabled={
+                            !selectedPriceCategoryId ||
+                            bulkPriceOptions.length === 0 ||
+                            bulkActionInProgress
+                          }
+                          onChange={(event) => {
+                            setBulkPriceTierId(event.target.value);
+                            setBulkCustomPrice("");
+                          }}
+                        >
+                          <option value="">
+                            {selectedPriceCategoryId ? "Choose price" : "Select one service"}
+                          </option>
+                          {bulkPriceOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                              {option.price === null
+                                ? " — price not set"
+                                : ` — ${formatPhotoPrice(option.price)}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <input
+                        className="bulk-price-override"
+                        type="number"
+                        min="1"
+                        step="1"
+                        inputMode="numeric"
+                        aria-label="Custom price override for selected photos"
+                        placeholder={
+                          selectedBulkPriceOption?.price?.toString() ?? "Custom price"
+                        }
+                        value={bulkCustomPrice}
+                        disabled={!selectedBulkPriceOption || bulkActionInProgress}
+                        onChange={(event) => setBulkCustomPrice(event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="button button--secondary"
+                        disabled={
+                          selectedPhotos.length === 0 ||
+                          !selectedBulkPriceOption ||
+                          bulkActionInProgress
+                        }
+                        onClick={() => void assignPriceToSelectedPhotos()}
+                      >
+                        {bulkPricing ? "Assigning…" : "Assign price"}
+                      </button>
+                      {selectedBulkPriceOption &&
+                        selectedCustomPriceCount > 0 &&
+                        !bulkCustomPrice.trim() && (
+                          <span className="bulk-category-warning" role="status">
+                            {selectedBulkPriceOption.price === null
+                              ? `This option has no listed price; custom prices will be cleared for ${selectedCustomPriceCount} selected ${selectedCustomPriceCount === 1 ? "photo" : "photos"}.`
+                              : `The listed price will replace existing custom prices on ${selectedCustomPriceCount} selected ${selectedCustomPriceCount === 1 ? "photo" : "photos"}.`}
+                          </span>
+                        )}
+                      {selectedPhotos.length > 0 && !selectedPriceCategoryId && (
+                        <span className="bulk-category-warning" role="status">
+                          Select photos from the same service to bulk assign a price.
+                        </span>
+                      )}
+                    </>
+                  )}
                   <button
                     type="button"
                     className="text-link"
-                    disabled={selectedPhotos.length === 0 || bulkDeleting || bulkCategorizing}
+                    disabled={selectedPhotos.length === 0 || bulkActionInProgress}
                     onClick={clearPhotoSelection}
                   >
                     Clear selection
@@ -1552,7 +1685,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                   <button
                     type="button"
                     className="button button--primary"
-                    disabled={selectedPhotos.length === 0 || bulkDeleting || bulkCategorizing}
+                    disabled={selectedPhotos.length === 0 || bulkActionInProgress}
                     onClick={() => setBulkDeleteOpen(true)}
                   >
                     Delete selected{selectedPhotos.length ? ` (${selectedPhotos.length})` : ""}
@@ -1580,7 +1713,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                             type="checkbox"
                             aria-label={`Select ${photo.title}`}
                             checked={selectedPhotoIds.has(photo.id)}
-                            disabled={bulkDeleting || bulkCategorizing}
+                            disabled={bulkActionInProgress}
                             onChange={() => togglePhotoSelection(photo.id)}
                           />
                         </label>
@@ -1598,7 +1731,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                         <div className="photo-actions">
                           <button
                             aria-label={`Edit ${photo.title}`}
-                            disabled={bulkDeleting || bulkCategorizing}
+                            disabled={bulkActionInProgress}
                             onClick={() => setEditing(photo)}
                           >
                             <Icon name="edit" size={17} />
@@ -1607,7 +1740,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                             aria-label={
                               photo.published ? `Hide ${photo.title}` : `Publish ${photo.title}`
                             }
-                            disabled={bulkDeleting || bulkCategorizing}
+                            disabled={bulkActionInProgress}
                             onClick={() =>
                               void updatePhoto(photo, { is_published: !photo.published })
                             }
@@ -1616,7 +1749,7 @@ function Admin({ onGalleryChange }: { onGalleryChange: () => Promise<void> }) {
                           </button>
                           <button
                             aria-label={`Delete ${photo.title}`}
-                            disabled={bulkDeleting || bulkCategorizing}
+                            disabled={bulkActionInProgress}
                             onClick={() => setDeletingPhoto(photo)}
                           >
                             <Icon name="trash" size={17} />
