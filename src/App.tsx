@@ -696,11 +696,13 @@ function Lightbox({
 function Gallery({
   photos,
   categories,
+  priceOptions,
   loading,
   error,
 }: {
   photos: Photo[];
   categories: GalleryCategory[];
+  priceOptions: GalleryPriceOption[];
   loading: boolean;
   error: string;
 }) {
@@ -711,12 +713,19 @@ function Gallery({
   const slowLoading = useSlowLoading(loading);
   const availablePhotos = photos.filter((photo) => !photo.imageError);
   const unavailablePhotoCount = photos.length - availablePhotos.length;
-  const availablePrices = [
-    ...new Set(
-      availablePhotos
-        .map(getPhotoPrice)
-        .filter((price): price is number => price !== null),
+  const pricesForCurrentService = [
+    ...priceOptions.flatMap((option) =>
+      option.price !== null && (categoryId === "All" || option.categoryId === categoryId)
+        ? [option.price]
+        : [],
     ),
+    ...availablePhotos
+      .filter((photo) => categoryId === "All" || photo.categoryId === categoryId)
+      .map(getPhotoPrice)
+      .filter((price): price is number => price !== null),
+  ];
+  const availablePrices = [
+    ...new Set(pricesForCurrentService),
   ].sort((a, b) => a - b);
   const filtered = availablePhotos.filter(
     (photo) =>
@@ -750,7 +759,10 @@ function Gallery({
         <div className="chips">
           <button
             key="all"
-            onClick={() => setCategoryId("All")}
+            onClick={() => {
+              setCategoryId("All");
+              setPriceFilter(null);
+            }}
             className={`chip ${categoryId === "All" ? "chip--active" : ""}`}
           >
             All
@@ -758,7 +770,10 @@ function Gallery({
           {categories.map((item) => (
             <button
               key={item.id}
-              onClick={() => setCategoryId(item.id)}
+              onClick={() => {
+                setCategoryId(item.id);
+                setPriceFilter(null);
+              }}
               className={`chip ${categoryId === item.id ? "chip--active" : ""}`}
             >
               {item.name}
@@ -2176,6 +2191,7 @@ export default function App() {
   );
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [categories, setCategories] = useState<GalleryCategory[]>([]);
+  const [priceOptions, setPriceOptions] = useState<GalleryPriceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const slowLoading = useSlowLoading(loading);
@@ -2195,6 +2211,7 @@ export default function App() {
       const gallery = await readGallery();
       setCategories(gallery.categories);
       setPhotos(gallery.photos);
+      setPriceOptions(gallery.priceOptions);
     } catch (loadError) {
       setError(errorMessage(loadError));
     } finally {
@@ -2208,7 +2225,15 @@ export default function App() {
 
   if (page === "home") return <Home photos={photos} slowLoading={slowLoading} />;
   if (page === "gallery") {
-    return <Gallery photos={photos} categories={categories} loading={loading} error={error} />;
+    return (
+      <Gallery
+        photos={photos}
+        categories={categories}
+        priceOptions={priceOptions}
+        loading={loading}
+        error={error}
+      />
+    );
   }
   if (page === "login") return <Login />;
   return <Admin onGalleryChange={refreshGallery} />;
